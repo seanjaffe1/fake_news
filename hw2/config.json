@@ -1,0 +1,25 @@
+{
+    "exp_name": "LSTM_Mixed",
+    "agent": "NLPAgent",
+
+    "mode": "train",
+
+    "cuda": false,
+    "async_loading":false,
+
+    "batch_size": 3,
+    "lr": 0.0001,
+    "max_epoch": 30,
+
+    "log_freq": 1,
+
+    "save_checkpoint_file": "checkpoint.pth.tar",
+    "load_checkpoint_file": "None",
+    "checkpoint_dir": "./checkpoints/",
+
+    "train_file": "./Data/train.tsv",
+    "valid_file": "./Data/valid.tsv",
+    "test_file": "./Data/test.tsv",
+
+    "data_loader_workers": 0
+}

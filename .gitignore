@@ -1,0 +1,4 @@
+*.tsv
+*.hdf5
+*glove.6B.50d.txt
+*.pyc
