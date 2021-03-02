@@ -18,10 +18,16 @@ def train(train_file, valid_file, test_file, output_file):
     
     agent = NLPAgent(config)
 
-    train()
+    #agent.validate()
+    agent.train()
+
+    agent.validate()
+
+    #agent.test(output_file)
 
 def main():
 
+    #train('Data/train.tsv', 'Data/valid.tsv', 'Data/test.tsv', 'predictions.txt')
     train('Data/train.tsv', 'Data/valid.tsv', 'Data/test.tsv', 'predictions.txt')
 
 

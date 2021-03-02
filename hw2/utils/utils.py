@@ -14,7 +14,7 @@ class Vocab():
     def __init__(self):
         self.words = set()
         self.words.add("<PAD")
-        self.word2id = {"<PAD>": -1}
+        self.word2id = {"<PAD>": 0}
         #self.vectors = 
     
     def get_words():
@@ -26,11 +26,11 @@ class Vocab():
     def add(self, word):
         if word not in self.word2id.keys():
             # 0 does not have a word attached
-            self.word2id[word] = len(self.words) - 1
+            self.word2id[word] = len(self.words)
             self.words.add(word)
 
     def __len__(self):
-        return len(self.words) - 1
+        return len(self.words) 
 
 def add_file_to_vocab(v, input_file):
     with open(input_file, 'r',  encoding='utf-8') as f:

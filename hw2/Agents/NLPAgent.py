@@ -1,7 +1,12 @@
 import numpy as np
+
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
+
 import h5py
+import json
+from tqdm import tqdm
 
 from Data import *
 from Model import *
@@ -9,22 +14,27 @@ from Model import *
 class NLPAgent():
 
     def __init__(self, config):
-        with open("../words2idx.json", 'r') as f:
+        with open("words2idx.json", 'r') as f:
             word2id = json.load(f)
-            
-        with open("../speaker2idx.json", 'r') as f:
-            speaker2idx = json.load(f)
-            
-            
-        with open("../party2idx.json", 'r') as f:
-            party2idx = json.load(f)
-            
-            
-        with open("../state2idx.json", 'r') as f:
-            state2idx = json.load(f)
 
-        with h5py.File("embeddig_data.hdf5", "r") as f:
+        self.vocab_len = len(word2id.keys())-1
+
+        with open("speaker2idx.json", 'r') as f:
+            self.speaker2idx = json.load(f)
+        self.speaker2idx["<UNK>"] = len(self.speaker2idx.keys())
+
+        with open("party2idx.json", 'r') as f:
+            self.party2idx = json.load(f)
+        self.party2idx["<UNK>"] = len(self.party2idx.keys())
+            
+        with open("state2idx.json", 'r') as f:
+            self.state2idx = json.load(f)
+        self.state2idx["<UNK>"] = len(self.state2idx.keys())
+
+        with h5py.File("embedding_data.hdf5", "r") as f:
             weights = f['.']['embeddings'].value
+        #print(word2id['the'], weights[word2id['the']])
+        #print(word2id['<UNK>'], weights[word2id['<UNK>']])
 
         self.poss_labels = ['true', 'mostly-true', 'half-true', 
                         'barely-true', 'false', 'pants-fire']
@@ -32,10 +42,12 @@ class NLPAgent():
         for i, l in enumerate(self.poss_labels):
             self.labels2id[l] = i
 
+
+        self.batch_size = config.batch_size
         # GPU assign
         # TOD
         self.has_cuda = torch.cuda.is_available()
-        self.cuda = self.has_cuda and self.config.cuda
+        self.cuda = self.has_cuda and config.cuda
         config.cuda = self.cuda
         if self.cuda:
             self.device = torch.device("cuda:0")
@@ -43,11 +55,9 @@ class NLPAgent():
         else:
             self.device = torch.device("cpu")
 
-        if mode == 'train':
-            self.train_dataset = LIARDataPoint(config.train_dataset,  word2id, speaker2idx, state2idx, party2idx, mode= 'train')
+        if config.mode == 'train':
+            self.train_dataset = LIARDataset(config.train_file,  word2id, self.speaker2idx, self.state2idx, self.party2idx, mode= 'train')
             
-            self.vocab = self.train_dataset.vocab
-
 
             self.train_dataloader = DataLoader(dataset=self.train_dataset,
                         batch_size=self.batch_size,
@@ -55,8 +65,9 @@ class NLPAgent():
                         shuffle=True,
                         #num_workers=self.config.num_workers
                         )
-            if self.config.valid_file is not None:
-                self.valid_dataset = LIARDataset(config.valid_dataset, word2id, speaker2idx, state2idx, party2idx, mode='validate')
+
+            if config.valid_file is not None:
+                self.valid_dataset = LIARDataset(config.valid_file, word2id, self.speaker2idx, self.state2idx, self.party2idx, mode='validate')
                 self.val_dataloader = DataLoader(dataset=self.valid_dataset,
                                      batch_size=1,
                                      pin_memory=self.cuda,
@@ -65,19 +76,26 @@ class NLPAgent():
                                      )
         
         else:
-            self.test_dataset = LIARDataset(config.test_dataset, word2id, speaker2idx, state2idx, party2idx, mode='test')
+            self.test_dataset = LIARDataset(config.test_file, word2id, self.speaker2idx, self.state2idx, self.party2idx, mode='test')
+            self.test_dataloader = DataLoader(dataset=self.test_dataset,
+                                     batch_size=1,
+                                     pin_memory=self.cuda,
+                                     shuffle=False,
+                                     #num_workers=self.config.num_workers
+                                     )
 
 
+        self.model = MixedLSTMModel(self.vocab_len, 2917, 87, 24, weights, self.device).to(device=self.device)
 
-        self.model = MixedLSTMModel(len(vocab), 2916, 86, 23, weights)
+        self.loss = nn.CrossEntropyLoss()
 
-        self.loss = NN.CrossEntropyLoss()
+        self.config = config
 
         self.optimizer = torch.optim.Adam(self.model.parameters(),
-                                        lr = self.config.lr,
+                                        lr = config.lr,
                                         weight_decay = .0001)
 
-        self.scheduler = torch.optim.lr_scheduler.ReduceROnPlateau(self.optimzer,
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer,
                                                                     patience=10,
                                                                     verbose=True)
         
@@ -95,6 +113,7 @@ class NLPAgent():
         filename = self.config.checkpoint_dir + filename
         try:
             print("Loading checkpoint '{}'".format(filename)) 
+            checkpoint = torch.load(filename)
 
             self.current_epoch = checkpoint['epoch']
             self.current_iteration = checkpoint['iteration']
@@ -124,7 +143,7 @@ class NLPAgent():
 
 
     def train(self):
-
+        
         for epoch in range(self.current_epoch, self.config.max_epoch):
             self.current_epoch = epoch
 
@@ -140,33 +159,49 @@ class NLPAgent():
             
             
             
-            self.validate(dataloader=self.valid_dataloader)
+            
         self.save_checkpoint(self.config.save_checkpoint_file)
 
     
     
     def train_one_epoch(self):
-        for x, y in tqdm(self.train_dataloader, desc = "Epoch: {}".format(self.current_epoch)):
+        i = 0
+        for x ,t_lens, y in tqdm(self.train_dataloader, desc = "Epoch: {}".format(self.current_epoch)):
+            self.optimizer.zero_grad()
+            # print("X:", x)
+            # print("tlens:", t_lens)
+            # print("Y:", y)
             #TODO cuda? async?
             #if self.cuda:
             #    # TODO 2 do I need to do pin memory?
             #    x = x.pin_memory().cuda(non_blocking=self.config.async_loading)
             #    y = y.pin_memory().cuda(non_blocking=self.config.async_loading)
             # TODO 2 put x and y on cuda here?
-
-            x = x.to(dtype=torch.float32, device=self.device, non_blocking=True)
+            
+            #print("Statement:", x[0])
+            # print("Speaker:", x[1])
+            # print("state:", x[2])
+            # print("party", x[3])
+            # print("Y:",  y)
+            # print("Y", [self.labels2id[yi] for yi in y])
+            
+            x = [xi.to(dtype=torch.int64, device=self.device, non_blocking=True) for xi in x]
             # TODO 1 change x so it can be passed into model
 
-            y = y.to(dtype=torch.float32, device=self.device, non_blocking=True)
+            y = [[self.labels2id[yi]] for yi in y]
+            y = torch.Tensor(y).to(dtype=torch.int64, device=self.device, non_blocking=True).squeeze(dim=1)
 
+            out = self.model(x, t_lens).squeeze(dim=1)
+            #print("label:", y, y.dim())
+            #print("out:", out, out.size(), y)
+            loss = self.loss(out, y)
 
-            out = self.model(x)
-
-            loss = self.loss(torch.max(out), self.labels2id(y))
-
-            self.optimizer.zero_grad()
+            
             loss.backward()
             self.optimizer.step()
+            i+=1
+            if i ==1000: 
+                 self.validate()
         print("CURR Loss:", loss)
 
 
@@ -174,15 +209,26 @@ class NLPAgent():
         correct = 0
         datapoints = 0
         # TODO 1 change x so it can be passed into model
-        for x, y in (self.val_dataloader):
-            print(x)
-            # TODO 1 change x so it can be passed into model
+        for x, t_lens, y in tqdm(self.val_dataloader):
 
+
+            x = [xi.to(dtype=torch.int64, device=self.device, non_blocking=True) for xi in x]
+            # TODO 1 change x so it can be passed into model
             
+
+
+            y = [[self.labels2id[yi]] for yi in y]
             
-    
-            correct +=1 # TODO 1
+            #print("X:", x)
+            out = self.model(x, t_lens).squeeze(dim=1)
+            #print("OUT:", out,  y[0][0])
+            #print("label:", y[0][0])
+            # print(torch.argmax(out).item())
+            if torch.argmax(out).item() == y[0][0]:
+                correct +=1 # TODO 1
             datapoints += 1.0
+            if datapoints > 1400:
+                break
         print("Validation Accuracy = ", str(correct / datapoints))
     
     
@@ -190,12 +236,16 @@ class NLPAgent():
         "Outputs predictions to outfile"
         preds = []
         # TODO 1 change x so it can be passed into model
-        for x, y in (self.test_dataloader):
+        for x, t_lens in tqdm(self.test_dataloader):
             # TODO 1 change x so it can be passed into model
 
-            
-            preds.append() # TODO 1
+            x = [xi.to(dtype=torch.int64, device=self.device, non_blocking=True) for xi in x] 
+            out = self.model(x, t_lens).squeeze(dim=1)
+            # print("OUT:", out)
+            # print("label:", y[0][0])
+            # print(torch.argmax(out).item())
+            argmax =  torch.argmax(out).item()           
+            preds.append(self.poss_labels[argmax]) # TODO 1
     
-        with(open(outfile), "w") as out:
-            for p in preds:
-                out.write(p)
+        with open(outfile, "w") as out:
+            out.write('\n'.join(preds))

@@ -1,11 +1,13 @@
 import torch
 import pandas as pandas
 import numpy as numpy
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
+import torch
 import string
 
 # Ignore warnings
 import warnings
+
 warnings.filterwarnings("ignore")
 
 
@@ -30,8 +32,8 @@ class LIARDataPoint():
         
         self.text_len = len(self.features[0])
         # pad with zeros
-        while len(self.features[0]) < 68:
-            self.features[0].append(word2id["<PAD>"])
+        # while len(self.features[0]) < 68:
+        #    self.features[0].append(word2id["<PAD>"])
 
         speaker = self.features[2]
         if speaker in speaker2idx.keys():
@@ -87,7 +89,7 @@ class LIARDataset(Dataset):
         "
 
         """
-
+        self.mode = mode
         self.data = []
         with open(input_file, 'r', encoding='utf-8') as file:
             for line in file:
@@ -103,8 +105,17 @@ class LIARDataset(Dataset):
 
 
     def __len__(self):
-        return(len(self.labels))
+        return(len(self.data))
 
     def __getitem__(self, idx):
         # TODO make sure this is correct
-        return self.data[idx].features, self.data[idx].label
+
+        feats = []
+        feats.append(torch.Tensor(self.data[idx].features[0]))
+        feats.append(torch.IntTensor([self.data[idx].speaker()]))
+        feats.append(torch.IntTensor([self.data[idx].state()]))
+        feats.append(torch.IntTensor([self.data[idx].party()]))
+        if self.mode == 'test':
+            return feats, self.data[idx].text_len
+
+        return feats, self.data[idx].text_len, self.data[idx].label

@@ -1,20 +1,20 @@
 {
-    "exp_name": "LSTM_Mixed",
+    "exp_name": "LSTM_Mixed_real",
     "agent": "NLPAgent",
 
     "mode": "train",
 
-    "cuda": false,
+    "cuda": true,
     "async_loading":false,
 
-    "batch_size": 3,
-    "lr": 0.0001,
-    "max_epoch": 30,
+    "batch_size": 1,
+    "lr": 0.001,
+    "max_epoch": 5,
 
     "log_freq": 1,
 
-    "save_checkpoint_file": "checkpoint.pth.tar",
-    "load_checkpoint_file": "None",
+    "save_checkpoint_file": "checkpoint8.pth.tar",
+    "load_checkpoint_file": "checkpoint5.pth.tar",
     "checkpoint_dir": "./checkpoints/",
 
     "train_file": "./Data/train.tsv",
